@@ -1,8 +1,8 @@
 # This imports the functions from the dotenv package to load environment variables from a .env file.
 from dotenv import load_dotenv
+
 # This imports the create_agent function from the langchain.agents module to create an AI agent.
 from langchain.agents import create_agent
-
 
 # Load variables from the local .env file
 load_dotenv()
