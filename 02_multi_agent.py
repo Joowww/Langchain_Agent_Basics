@@ -4,8 +4,15 @@ from langchain.agents import create_agent
 # Import the tool decorator.
 # The decorator exposes subagent wrapper functions as tools for the supervisor.
 from langchain.tools import tool
+from langchain_ollama import ChatOllama
 
 load_dotenv()
+
+# Create a connection to the local Qwen3 model running through Ollama.
+llm = ChatOllama(
+    model="qwen3:4b",
+    temperature=0,
+)
 
 # Weather tool
 def get_weather(city: str) -> str:
@@ -19,7 +26,7 @@ def get_weather(city: str) -> str:
 
 # Weather agent
 weather_agent = create_agent(
-    model="openai:gpt-5.5",
+    model=llm,
 
     # This agent only has access to the weather tool.
     tools=[get_weather],
@@ -56,7 +63,7 @@ def calculate_flight_time(distance_km: float, speed_kmh: float) -> str:
 
 # Flight agent
 flight_agent = create_agent(
-    model="openai:gpt-5.5",
+    model=llm,
 
     # This agent only has access to calculate_flight_time, it does not know about get_weather.
     tools=[calculate_flight_time],
@@ -122,6 +129,7 @@ def ask_weather_agent(query: str) -> str:
     #     │
     #     ▼
     # get_weather()
+
     
     result = weather_agent.invoke(
         {
@@ -211,7 +219,7 @@ def ask_flight_agent(query: str) -> str:
 
 # Supervisor agent configuration.
 supervisor_agent = create_agent(
-    model="openai:gpt-5.5",
+    model=llm,
 
     # Supervisor tool configuration.
 

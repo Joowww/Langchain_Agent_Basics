@@ -4,9 +4,17 @@ from dotenv import load_dotenv
 # This imports the create_agent function from the langchain.agents module to create an AI agent.
 from langchain.agents import create_agent
 
+# This imports the ChatOllama class from the langchain_ollama module to use the Ollama model for chat-based interactions.
+from langchain_ollama import ChatOllama
+
 # Load variables from the local .env file
 load_dotenv()
 
+# Create a connection to the local Qwen3 model running through Ollama.
+llm = ChatOllama(
+    model="qwen3:4b",
+    temperature=2,
+)
 
 def get_weather(city: str) -> str:
     # Normally docstrings describe what a function does for developers.
@@ -31,7 +39,7 @@ agent = create_agent(
     # Instead of manually doing something like: client = OpenAI(...)
     # LangChain handle that abstraction.
     # The order is: your model input -> LangChain recognizes provider -> langchain-openai integration -> OpenAI API call.
-    model="openai:gpt-5.5",
+    model=llm,
 
     # Gives the agent acces to the function (it could be more functions inside []), so it can call it when needed.
     tools=[get_weather],
