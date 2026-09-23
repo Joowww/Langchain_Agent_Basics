@@ -369,12 +369,12 @@ def update_state(
         )
 
     speed_patterns = [
-        r"(?:travelling|traveling|flying|moving)"
+        r"(?:travelling|traveling|flying|moving)"  # noqa: ISC004
         r"\s+at\s+"
         r"(\d+(?:[.,]\d+)?)"
         r"\s*km\s*/?\s*h",
 
-        r"drone(?:\s+speed|\s+airspeed)"
+        r"drone(?:\s+speed|\s+airspeed)"  # noqa: ISC004
         r"[^0-9]{0,20}"
         r"(\d+(?:[.,]\d+)?)"
         r"\s*km\s*/?\s*h",
@@ -432,17 +432,17 @@ def update_state(
         )
 
     battery_patterns = [
-        r"(?:the\s+)?drone\s+"
+        r"(?:the\s+)?drone\s+"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"(?:currently\s+)?has\s+"
         r"(\d+(?:[.,]\d+)?)\s*%"
         r"\s+battery"
         r"(?:\s+(?:remaining|left|available))?",
 
-        r"(\d+(?:[.,]\d+)?)\s*%"
+        r"(\d+(?:[.,]\d+)?)\s*%"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"\s+battery\s+"
         r"(?:remaining|left|available)",
 
-        r"(?:current\s+)?battery"
+        r"(?:current\s+)?battery"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"(?:\s+(?:level|percentage))?"
         r"\s*(?:is|at|=)\s*"
         r"(\d+(?:[.,]\d+)?)\s*%",
@@ -465,14 +465,14 @@ def update_state(
             break
 
     consumption_patterns = [
-        r"(?:consumes?|consumption"
+        r"(?:consumes?|consumption"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"(?:\s+rate)?(?:\s+is)?)"
         r"[^0-9]{0,30}"
         r"(\d+(?:[.,]\d+)?)\s*%"
         r"(?:\s+battery)?"
         r"\s*(?:per\s+minute|/\s*min)",
 
-        r"(\d+(?:[.,]\d+)?)\s*%"
+        r"(\d+(?:[.,]\d+)?)\s*%"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"(?:\s+battery)?"
         r"\s*(?:per\s+minute|/\s*min)",
     ]
@@ -494,11 +494,11 @@ def update_state(
             break
 
     reserve_patterns = [
-        r"(\d+(?:[.,]\d+)?)\s*%"
+        r"(\d+(?:[.,]\d+)?)\s*%"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"(?:\s+battery)?"
         r"\s+reserve",
 
-        r"(?:reserve|minimum\s+reserve)"
+        r"(?:reserve|minimum\s+reserve)"  # noqa: ISC004 - Comment to disable Ruff for these lines
         r"[^0-9]{0,30}"
         r"(\d+(?:[.,]\d+)?)\s*%",
     ]
