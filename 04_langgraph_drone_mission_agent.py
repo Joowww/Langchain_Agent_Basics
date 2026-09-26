@@ -12,6 +12,7 @@ class DroneMissionState(TypedDict, total=False):
     user_input: str
     intent: str
     response: str
+    updated_fields: list[str]
 
     distance_km: float | None
     drone_speed_kmh: float | None
@@ -27,7 +28,13 @@ class DroneMissionState(TypedDict, total=False):
     wind_result: dict | None
     battery_result: dict | None
 
-    trace_steps: list[str]
+    run_flight: bool
+    run_wind: bool
+    run_battery: bool
+
+    mission_status: str
+    missing_fields: list[str]
+
     final_report: str
     calculation_trace: str
 
@@ -49,6 +56,26 @@ DIRECTIONS = {
     "w": 270.0,
     "northwest": 315.0,
     "nw": 315.0,
+}
+
+
+FLIGHT_FIELDS = {
+    "distance_km",
+    "drone_speed_kmh",
+    "wind_speed_kmh",
+    "flight_bearing_deg",
+    "wind_direction_from_deg",
+}
+
+WIND_FIELDS = {
+    "wind_speed_kmh",
+    "max_safe_wind_speed_kmh",
+}
+
+BATTERY_FIELDS = {
+    "battery_percent",
+    "consumption_percent_per_minute",
+    "reserve_percent",
 }
 
 
@@ -102,21 +129,29 @@ def calculate_flight_time(
     wind_direction_from_deg %= 360
 
     relative_angle_rad = math.radians(
-        wind_direction_from_deg - flight_bearing_deg
+        wind_direction_from_deg
+        - flight_bearing_deg
     )
 
     headwind_component_kmh = (
-        wind_speed_kmh * math.cos(relative_angle_rad)
+        wind_speed_kmh
+        * math.cos(relative_angle_rad)
     )
 
     crosswind_component_kmh = (
-        wind_speed_kmh * math.sin(relative_angle_rad)
+        wind_speed_kmh
+        * math.sin(relative_angle_rad)
     )
 
-    if abs(crosswind_component_kmh) >= drone_speed_kmh:
+    if (
+        abs(crosswind_component_kmh)
+        >= drone_speed_kmh
+    ):
         return {
             "status": "unsafe",
-            "message": "The drone cannot compensate for the crosswind.",
+            "message": (
+                "The drone cannot compensate for the crosswind."
+            ),
             "headwind_component_kmh": round(
                 headwind_component_kmh,
                 2,
@@ -157,7 +192,8 @@ def calculate_flight_time(
         }
 
     flight_time_minutes = (
-        distance_km / ground_speed_kmh
+        distance_km
+        / ground_speed_kmh
     ) * 60
 
     return {
@@ -193,7 +229,8 @@ def check_wind_safety(
     print(
         "\n[TOOL EXECUTED] check_wind_safety("
         f"wind_speed_kmh={wind_speed_kmh}, "
-        f"max_safe_wind_speed_kmh={max_safe_wind_speed_kmh})"
+        f"max_safe_wind_speed_kmh="
+        f"{max_safe_wind_speed_kmh})"
     )
 
     if wind_speed_kmh < 0:
@@ -211,12 +248,17 @@ def check_wind_safety(
         }
 
     wind_safe = (
-        wind_speed_kmh <= max_safe_wind_speed_kmh
+        wind_speed_kmh
+        <= max_safe_wind_speed_kmh
     )
 
     return {
-        "status": "safe" if wind_safe else "unsafe",
-        "wind_safe": wind_safe,
+        "status":
+            "safe"
+            if wind_safe
+            else "unsafe",
+        "wind_safe":
+            wind_safe,
         "wind_speed_kmh": round(
             wind_speed_kmh,
             2,
@@ -251,27 +293,34 @@ def check_battery(
     if flight_time_minutes <= 0:
         return {
             "status": "error",
-            "message": "Flight time must be greater than 0.",
+            "message": (
+                "Flight time must be greater than 0."
+            ),
         }
 
     if not 0 <= battery_percent <= 100:
         return {
             "status": "error",
-            "message": "Battery percentage must be between 0 and 100.",
+            "message": (
+                "Battery percentage must be between 0 and 100."
+            ),
         }
 
     if consumption_percent_per_minute <= 0:
         return {
             "status": "error",
             "message": (
-                "Battery consumption per minute must be greater than 0."
+                "Battery consumption per minute "
+                "must be greater than 0."
             ),
         }
 
     if not 0 <= reserve_percent <= 100:
         return {
             "status": "error",
-            "message": "Reserve percentage must be between 0 and 100.",
+            "message": (
+                "Reserve percentage must be between 0 and 100."
+            ),
         }
 
     required_battery_percent = (
@@ -290,12 +339,12 @@ def check_battery(
     )
 
     return {
-        "status": (
+        "status":
             "safe"
             if battery_sufficient
-            else "unsafe"
-        ),
-        "battery_sufficient": battery_sufficient,
+            else "unsafe",
+        "battery_sufficient":
+            battery_sufficient,
         "required_battery_percent": round(
             required_battery_percent,
             2,
@@ -311,7 +360,9 @@ def check_battery(
     }
 
 
-def to_float(value: str) -> float:
+def to_float(
+    value: str,
+) -> float:
     return float(
         value.replace(",", ".")
     )
@@ -337,13 +388,16 @@ def extract_direction(
         .replace(" ", "")
     )
 
-    return DIRECTIONS.get(direction)
+    return DIRECTIONS.get(
+        direction
+    )
 
 
 def extract_updates(
     user_input: str,
 ) -> dict:
     text = user_input.lower()
+
     updates = {}
 
     match = re.search(
@@ -355,20 +409,25 @@ def extract_updates(
     )
 
     if match:
-        updates["distance_km"] = to_float(
-            match.group(1)
+        updates["distance_km"] = (
+            to_float(
+                match.group(1)
+            )
         )
 
     speed_patterns = [
-        r"(?:travelling|traveling|flying|moving)"   # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"\s+at\s+"
-        r"(\d+(?:[.,]\d+)?)"
-        r"\s*km\s*/?\s*h",
-
-        r"drone(?:\s+speed|\s+airspeed)"   # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"[^0-9]{0,20}"
-        r"(\d+(?:[.,]\d+)?)"
-        r"\s*km\s*/?\s*h",
+        (
+            r"(?:travelling|traveling|flying|moving)"
+            r"\s+at\s+"
+            r"(\d+(?:[.,]\d+)?)"
+            r"\s*km\s*/?\s*h"
+        ),
+        (
+            r"drone(?:\s+speed|\s+airspeed)"
+            r"[^0-9]{0,20}"
+            r"(\d+(?:[.,]\d+)?)"
+            r"\s*km\s*/?\s*h"
+        ),
     ]
 
     for pattern in speed_patterns:
@@ -379,55 +438,86 @@ def extract_updates(
         )
 
         if match:
-            updates["drone_speed_kmh"] = (
-                to_float(match.group(1))
+            updates[
+                "drone_speed_kmh"
+            ] = to_float(
+                match.group(1)
             )
+
             break
 
-    match = re.search(
-        r"(?:the\s+)?wind(?:\s+speed)?"
-        r"\s+(?:is|at|of)?\s*"
+    max_wind_match = re.search(
+        r"(?:maximum|max)\s+safe\s+wind\s+speed"
+        r"(?:\s+for\s+the\s+drone)?"
+        r"\s*(?:is|=|of|to|at)?\s*"
         r"(\d+(?:[.,]\d+)?)"
         r"\s*km\s*/?\s*h",
         text,
         re.IGNORECASE,
     )
 
+    wind_text = text
+
+    if max_wind_match:
+        updates[
+            "max_safe_wind_speed_kmh"
+        ] = to_float(
+            max_wind_match.group(1)
+        )
+
+        start, end = (
+            max_wind_match.span()
+        )
+
+        wind_text = (
+            text[:start]
+            + " " * (end - start)
+            + text[end:]
+        )
+
+    match = re.search(
+        r"\bwind\b(?:\s+speed)?"
+        r"\s+(?:is|at|of|to)?\s*"
+        r"(?:now\s+)?"
+        r"(\d+(?:[.,]\d+)?)"
+        r"\s*km\s*/?\s*h",
+        wind_text,
+        re.IGNORECASE,
+    )
+
     if match:
-        updates["wind_speed_kmh"] = to_float(
+        updates[
+            "wind_speed_kmh"
+        ] = to_float(
             match.group(1)
         )
 
-    match = re.search(
-        r"(?:maximum|max)\s+safe\s+wind\s+speed"
-        r"(?:\s+for\s+the\s+drone)?"
-        r"\s*(?:is|=|of)?\s*"
-        r"(\d+(?:[.,]\d+)?)"
-        r"\s*km\s*/?\s*h",
-        text,
-        re.IGNORECASE,
-    )
-
-    if match:
-        updates["max_safe_wind_speed_kmh"] = (
-            to_float(match.group(1))
-        )
-
     battery_patterns = [
-        r"(?:the\s+)?drone\s+"    # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"(?:currently\s+)?has\s+"
-        r"(\d+(?:[.,]\d+)?)\s*%"
-        r"\s+battery"
-        r"(?:\s+(?:remaining|left|available))?",
-
-        r"(\d+(?:[.,]\d+)?)\s*%"   # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"\s+battery\s+"
-        r"(?:remaining|left|available)",
-
-        r"(?:current\s+)?battery"      # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"(?:\s+(?:level|percentage))?"
-        r"\s*(?:is|at|=)\s*"
-        r"(\d+(?:[.,]\d+)?)\s*%",
+        (
+            r"(?:the\s+)?drone\s+"
+            r"(?:currently\s+)?has\s+"
+            r"(\d+(?:[.,]\d+)?)\s*%"
+            r"\s+battery"
+            r"(?:\s+(?:remaining|left|available))?"
+        ),
+        (
+            r"(\d+(?:[.,]\d+)?)\s*%"
+            r"\s+battery\s+"
+            r"(?:remaining|left|available)"
+        ),
+        (
+            r"(?:current\s+)?battery"
+            r"(?:\s+(?:level|percentage))?"
+            r"\s*(?:is|at|=)\s*"
+            r"(\d+(?:[.,]\d+)?)\s*%"
+        ),
+        (
+            r"(?:set|change|update)\s+"
+            r"(?:the\s+)?battery"
+            r"(?:\s+(?:level|percentage))?"
+            r"\s+(?:to|at)\s+"
+            r"(\d+(?:[.,]\d+)?)\s*%"
+        ),
     ]
 
     for pattern in battery_patterns:
@@ -438,22 +528,28 @@ def extract_updates(
         )
 
         if match:
-            updates["battery_percent"] = (
-                to_float(match.group(1))
+            updates[
+                "battery_percent"
+            ] = to_float(
+                match.group(1)
             )
+
             break
 
     consumption_patterns = [
-        r"(?:consumes?|consumption"      # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"(?:\s+rate)?(?:\s+is)?)"
-        r"[^0-9]{0,30}"
-        r"(\d+(?:[.,]\d+)?)\s*%"
-        r"(?:\s+battery)?"
-        r"\s*(?:per\s+minute|/\s*min)",
-
-        r"(\d+(?:[.,]\d+)?)\s*%"      # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"(?:\s+battery)?"
-        r"\s*(?:per\s+minute|/\s*min)",
+        (
+            r"(?:consumes?|consumption"
+            r"(?:\s+rate)?(?:\s+is)?)"
+            r"[^0-9]{0,30}"
+            r"(\d+(?:[.,]\d+)?)\s*%"
+            r"(?:\s+battery)?"
+            r"\s*(?:per\s+minute|/\s*min)"
+        ),
+        (
+            r"(\d+(?:[.,]\d+)?)\s*%"
+            r"(?:\s+battery)?"
+            r"\s*(?:per\s+minute|/\s*min)"
+        ),
     ]
 
     for pattern in consumption_patterns:
@@ -469,16 +565,20 @@ def extract_updates(
             ] = to_float(
                 match.group(1)
             )
+
             break
 
     reserve_patterns = [
-        r"(\d+(?:[.,]\d+)?)\s*%"      # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"(?:\s+battery)?"
-        r"\s+reserve",
-
-        r"(?:reserve|minimum\s+reserve)"      # noqa: ISC004 - Comment to disable Ruff for these lines
-        r"[^0-9]{0,30}"
-        r"(\d+(?:[.,]\d+)?)\s*%",
+        (
+            r"(\d+(?:[.,]\d+)?)\s*%"
+            r"(?:\s+battery)?"
+            r"\s+reserve"
+        ),
+        (
+            r"(?:reserve|minimum\s+reserve)"
+            r"[^0-9]{0,30}"
+            r"(\d+(?:[.,]\d+)?)\s*%"
+        ),
     ]
 
     for pattern in reserve_patterns:
@@ -489,9 +589,12 @@ def extract_updates(
         )
 
         if match:
-            updates["reserve_percent"] = (
-                to_float(match.group(1))
+            updates[
+                "reserve_percent"
+            ] = to_float(
+                match.group(1)
             )
+
             break
 
     bearing_match = re.search(
@@ -504,10 +607,13 @@ def extract_updates(
     )
 
     if bearing_match:
-        updates["flight_bearing_deg"] = (
+        updates[
+            "flight_bearing_deg"
+        ] = (
             to_float(
                 bearing_match.group(1)
-            ) % 360
+            )
+            % 360
         )
 
     else:
@@ -523,17 +629,20 @@ def extract_updates(
         if direction is None:
             direction = extract_direction(
                 text,
-                r"\b(?:towards?|heading|direction)\s+"
+                r"\b(?:towards?|heading|flight\s+direction|direction)"
+                r"\s+(?:(?:to|is|=)\s+)?"
                 r"(north(?:east|west)?|"
                 r"south(?:east|west)?|"
                 r"east|west|ne|nw|se|sw|n|s|e|w)\b",
             )
 
         if direction is not None:
-            updates["flight_bearing_deg"] = direction
+            updates[
+                "flight_bearing_deg"
+            ] = direction
 
     wind_bearing_match = re.search(
-        r"wind.*?\bfrom\s+(?:the\s+)?"
+        r"\bwind\b.*?\bfrom\s+(?:the\s+)?"
         r"(\d+(?:[.,]\d+)?)"
         r"\s*(?:degrees|degree|deg|°)",
         text,
@@ -541,20 +650,33 @@ def extract_updates(
     )
 
     if wind_bearing_match:
-        updates["wind_direction_from_deg"] = (
+        updates[
+            "wind_direction_from_deg"
+        ] = (
             to_float(
                 wind_bearing_match.group(1)
-            ) % 360
+            )
+            % 360
         )
 
     else:
         wind_direction = extract_direction(
             text,
-            r"wind.*?\bfrom\s+(?:the\s+)?"
+            r"\bwind\b.*?\bfrom\s+(?:the\s+)?"
             r"(north(?:east|west)?|"
             r"south(?:east|west)?|"
             r"east|west|ne|nw|se|sw|n|s|e|w)\b",
         )
+
+        if wind_direction is None:
+            wind_direction = extract_direction(
+                text,
+                r"\bwind\s+direction\b"
+                r"\s+(?:(?:to|is|=)\s+)?"
+                r"(north(?:east|west)?|"
+                r"south(?:east|west)?|"
+                r"east|west|ne|nw|se|sw|n|s|e|w)\b",
+            )
 
         if wind_direction is not None:
             updates[
@@ -609,15 +731,14 @@ def is_analysis_request(
     )
 
 
-def format_trace(
-    trace: list[str],
-) -> str:
-    return "\n".join(
-        f"{number}. {step}"
-        for number, step in enumerate(
-            trace,
-            start=1,
-        )
+def is_recalculation_request(
+    user_input: str,
+) -> bool:
+    text = user_input.lower()
+
+    return (
+        "recalculate" in text
+        or "recompute" in text
     )
 
 
@@ -636,7 +757,8 @@ def state_to_text(
         f"{state.get('consumption_percent_per_minute')}\n"
         f"reserve_percent={state.get('reserve_percent')}\n"
         f"max_safe_wind_speed_kmh="
-        f"{state.get('max_safe_wind_speed_kmh')}"
+        f"{state.get('max_safe_wind_speed_kmh')}\n"
+        f"mission_status={state.get('mission_status')}"
     )
 
 
@@ -664,342 +786,70 @@ def clean_llm_response(
     return content.strip()
 
 
-def process_input_node(
+def get_changed_fields(
     state: DroneMissionState,
-) -> dict:
-    print("\n[NODE] process_input")
-
-    user_input = state["user_input"]
-
-    if is_trace_request(
-        user_input
-    ):
-        return {
-            "intent": "trace",
-        }
-
-    updates = extract_updates(
-        user_input
-    )
-
-    if (
-        updates
-        or is_analysis_request(user_input)
-    ):
-        return {
-            **updates,
-            "intent": "analyse",
-            "flight_result": None,
-            "wind_result": None,
-            "battery_result": None,
-            "trace_steps": [
-                "Read the current mission parameters."
-            ],
-            "response": "",
-        }
-
-    return {
-        "intent": "question",
-    }
-
-
-def route_after_input(
-    state: DroneMissionState,
-) -> Literal[
-    "analyse",
-    "trace",
-    "question",
-]:
-    return state["intent"]
-
-
-def flight_check_node(
-    state: DroneMissionState,
-) -> dict:
-    print("[NODE] flight_check")
-
-    trace = list(
-        state.get(
-            "trace_steps",
-            [],
-        )
-    )
-
-    required_values = [
-        state.get("distance_km"),
-        state.get("drone_speed_kmh"),
-        state.get("wind_speed_kmh"),
-        state.get("flight_bearing_deg"),
-        state.get("wind_direction_from_deg"),
+    updates: dict,
+) -> list[str]:
+    return [
+        key
+        for key, value in updates.items()
+        if state.get(key) != value
     ]
 
-    if not all(
-        value is not None
-        for value in required_values
-    ):
-        trace.append(
-            "Flight dynamics cannot be calculated because one "
-            "or more required parameters are missing."
+
+def has_required_values(
+    state: DroneMissionState,
+    updates: dict,
+    fields: set[str],
+) -> bool:
+    return all(
+        updates.get(
+            field,
+            state.get(field),
         )
-
-        return {
-            "flight_result": None,
-            "trace_steps": trace,
-        }
-
-    trace.append(
-        "All parameters required for the flight dynamics "
-        "analysis are available."
+        is not None
+        for field in fields
     )
 
-    flight_result = calculate_flight_time.invoke(
-        {
-            "distance_km":
-                state["distance_km"],
-            "drone_speed_kmh":
-                state["drone_speed_kmh"],
-            "wind_speed_kmh":
-                state["wind_speed_kmh"],
-            "flight_bearing_deg":
-                state["flight_bearing_deg"],
-            "wind_direction_from_deg":
-                state["wind_direction_from_deg"],
-        }
-    )
 
-    relative_angle = (
-        state["wind_direction_from_deg"]
-        - state["flight_bearing_deg"]
-    )
-
-    trace.append(
-        "Calculate the relative wind angle: "
-        f"{state['wind_direction_from_deg']}° - "
-        f"{state['flight_bearing_deg']}° = "
-        f"{relative_angle}°."
-    )
-
-    if "headwind_component_kmh" in flight_result:
-        trace.append(
-            "Headwind component: "
-            f"{flight_result['headwind_component_kmh']} km/h."
-        )
-
-    if "crosswind_component_kmh" in flight_result:
-        trace.append(
-            "Crosswind component: "
-            f"{flight_result['crosswind_component_kmh']} km/h."
-        )
-
-    if flight_result["status"] == "success":
-        trace.append(
-            "The drone can compensate for the crosswind."
-        )
-
-        trace.append(
-            "Ground speed after wind correction: "
-            f"{flight_result['ground_speed_kmh']} km/h."
-        )
-
-        trace.append(
-            "Calculate flight time: "
-            f"{state['distance_km']} km / "
-            f"{flight_result['ground_speed_kmh']} km/h × 60 = "
-            f"{flight_result['flight_time_minutes']} minutes."
-        )
-
-    else:
-        if (
-            "crosswind_component_kmh"
-            in flight_result
-            and abs(
-                flight_result[
-                    "crosswind_component_kmh"
-                ]
-            )
-            >= state["drone_speed_kmh"]
-        ):
-            trace.append(
-                "Compare the crosswind magnitude with the "
-                "drone airspeed: "
-                f"{abs(flight_result['crosswind_component_kmh'])} "
-                f"km/h >= {state['drone_speed_kmh']} km/h."
-            )
-
-        trace.append(
-            flight_result["message"]
-        )
-
-    return {
-        "flight_result": flight_result,
-        "trace_steps": trace,
+def get_missing_fields(
+    state: DroneMissionState,
+) -> list[str]:
+    field_labels = {
+        "distance_km":
+            "flight distance",
+        "drone_speed_kmh":
+            "drone speed",
+        "wind_speed_kmh":
+            "wind speed",
+        "flight_bearing_deg":
+            "flight direction or bearing",
+        "wind_direction_from_deg":
+            "wind direction",
+        "max_safe_wind_speed_kmh":
+            "maximum safe wind speed",
+        "battery_percent":
+            "current battery percentage",
+        "consumption_percent_per_minute":
+            "battery consumption percentage per minute",
+        "reserve_percent":
+            "required battery reserve",
     }
 
+    return [
+        label
+        for field, label
+        in field_labels.items()
+        if state.get(field) is None
+    ]
 
-def wind_check_node(
+
+def build_calculation_trace(
     state: DroneMissionState,
-) -> dict:
-    print("[NODE] wind_check")
-
-    trace = list(
-        state.get(
-            "trace_steps",
-            [],
-        )
-    )
-
-    if (
-        state.get("wind_speed_kmh") is None
-        or state.get(
-            "max_safe_wind_speed_kmh"
-        ) is None
-    ):
-        trace.append(
-            "Wind safety cannot be determined because required "
-            "information is missing."
-        )
-
-        return {
-            "wind_result": None,
-            "trace_steps": trace,
-        }
-
-    wind_result = check_wind_safety.invoke(
-        {
-            "wind_speed_kmh":
-                state["wind_speed_kmh"],
-            "max_safe_wind_speed_kmh":
-                state[
-                    "max_safe_wind_speed_kmh"
-                ],
-        }
-    )
-
-    trace.append(
-        "Compare the wind speed with the drone safety limit: "
-        f"{state['wind_speed_kmh']} km/h versus "
-        f"{state['max_safe_wind_speed_kmh']} km/h."
-    )
-
-    if wind_result["status"] == "safe":
-        trace.append(
-            "The wind speed is within the drone's general "
-            "safe operating limit."
-        )
-
-    else:
-        trace.append(
-            "The wind speed exceeds the drone's general "
-            "safe operating limit."
-        )
-
-    return {
-        "wind_result": wind_result,
-        "trace_steps": trace,
-    }
-
-
-def route_after_wind(
-    state: DroneMissionState,
-) -> Literal[
-    "battery",
-    "report",
-]:
-    flight_result = state.get(
-        "flight_result"
-    )
-
-    battery_data_available = all(
-        state.get(key) is not None
-        for key in [
-            "battery_percent",
-            "consumption_percent_per_minute",
-            "reserve_percent",
-        ]
-    )
-
-    if (
-        flight_result is not None
-        and flight_result.get("status")
-        == "success"
-        and battery_data_available
-    ):
-        return "battery"
-
-    return "report"
-
-
-def battery_check_node(
-    state: DroneMissionState,
-) -> dict:
-    print("[NODE] battery_check")
-
-    trace = list(
-        state.get(
-            "trace_steps",
-            [],
-        )
-    )
-
-    flight_result = state["flight_result"]
-
-    battery_result = check_battery.invoke(
-        {
-            "flight_time_minutes":
-                flight_result[
-                    "flight_time_minutes"
-                ],
-            "battery_percent":
-                state["battery_percent"],
-            "consumption_percent_per_minute":
-                state[
-                    "consumption_percent_per_minute"
-                ],
-            "reserve_percent":
-                state["reserve_percent"],
-        }
-    )
-
-    trace.append(
-        "Calculate required battery: "
-        f"{flight_result['flight_time_minutes']} minutes × "
-        f"{state['consumption_percent_per_minute']}%/min = "
-        f"{battery_result['required_battery_percent']}%."
-    )
-
-    trace.append(
-        "Calculate battery after flight: "
-        f"{state['battery_percent']}% - "
-        f"{battery_result['required_battery_percent']}% = "
-        f"{battery_result['battery_after_flight_percent']}%."
-    )
-
-    trace.append(
-        "Compare the remaining battery with the required "
-        f"{state['reserve_percent']}% reserve."
-    )
-
-    if battery_result["status"] == "safe":
-        trace.append(
-            "The remaining battery satisfies the required reserve."
-        )
-
-    else:
-        trace.append(
-            "The remaining battery does not satisfy the "
-            "required reserve."
-        )
-
-    return {
-        "battery_result": battery_result,
-        "trace_steps": trace,
-    }
-
-
-def final_report_node(
-    state: DroneMissionState,
-) -> dict:
-    print("[NODE] final_report")
+) -> str:
+    steps = [
+        "Read the current mission parameters."
+    ]
 
     flight_result = state.get(
         "flight_result"
@@ -1013,22 +863,730 @@ def final_report_node(
         "battery_result"
     )
 
-    trace = list(
-        state.get(
-            "trace_steps",
-            [],
+    if flight_result is None:
+        steps.append(
+            "Flight dynamics cannot be fully evaluated because "
+            "a valid flight result is not available."
+        )
+
+    else:
+        steps.append(
+            "All parameters required for the flight dynamics "
+            "analysis are available."
+        )
+
+        relative_angle = (
+            state["wind_direction_from_deg"]
+            - state["flight_bearing_deg"]
+        )
+
+        steps.append(
+            "Calculate the relative wind angle: "
+            f"{state['wind_direction_from_deg']}° - "
+            f"{state['flight_bearing_deg']}° = "
+            f"{relative_angle}°."
+        )
+
+        if (
+            "headwind_component_kmh"
+            in flight_result
+        ):
+            steps.append(
+                "Headwind component: "
+                f"{flight_result['headwind_component_kmh']} km/h."
+            )
+
+        if (
+            "crosswind_component_kmh"
+            in flight_result
+        ):
+            steps.append(
+                "Crosswind component: "
+                f"{flight_result['crosswind_component_kmh']} km/h."
+            )
+
+        if (
+            flight_result["status"]
+            == "success"
+        ):
+            steps.append(
+                "The drone can compensate for the crosswind."
+            )
+
+            steps.append(
+                "Ground speed after wind correction: "
+                f"{flight_result['ground_speed_kmh']} km/h."
+            )
+
+            steps.append(
+                "Calculate flight time: "
+                f"{state['distance_km']} km / "
+                f"{flight_result['ground_speed_kmh']} km/h × 60 = "
+                f"{flight_result['flight_time_minutes']} minutes."
+            )
+
+        elif (
+            flight_result["status"]
+            == "unsafe"
+        ):
+            if (
+                "crosswind_component_kmh"
+                in flight_result
+                and state.get(
+                    "drone_speed_kmh"
+                )
+                is not None
+                and abs(
+                    flight_result[
+                        "crosswind_component_kmh"
+                    ]
+                )
+                >= state[
+                    "drone_speed_kmh"
+                ]
+            ):
+                steps.append(
+                    "Compare the crosswind magnitude with the "
+                    "drone airspeed: "
+                    f"{abs(flight_result['crosswind_component_kmh'])} "
+                    f"km/h >= {state['drone_speed_kmh']} km/h."
+                )
+
+            steps.append(
+                flight_result["message"]
+            )
+
+        else:
+            steps.append(
+                flight_result.get(
+                    "message",
+                    (
+                        "The flight dynamics calculation "
+                        "returned an error."
+                    ),
+                )
+            )
+
+    if wind_result is None:
+        steps.append(
+            "Wind safety cannot be fully evaluated because "
+            "a valid wind safety result is not available."
+        )
+
+    else:
+        steps.append(
+            "Compare the wind speed with the drone safety limit: "
+            f"{state['wind_speed_kmh']} km/h versus "
+            f"{state['max_safe_wind_speed_kmh']} km/h."
+        )
+
+        if (
+            wind_result["status"]
+            == "safe"
+        ):
+            steps.append(
+                "The wind speed is within the drone's general "
+                "safe operating limit."
+            )
+
+        elif (
+            wind_result["status"]
+            == "unsafe"
+        ):
+            steps.append(
+                "The wind speed exceeds the drone's general "
+                "safe operating limit."
+            )
+
+        else:
+            steps.append(
+                wind_result.get(
+                    "message",
+                    "The wind safety check returned an error.",
+                )
+            )
+
+    if battery_result is not None:
+        steps.append(
+            "Calculate required battery: "
+            f"{flight_result['flight_time_minutes']} minutes × "
+            f"{state['consumption_percent_per_minute']}%/min = "
+            f"{battery_result['required_battery_percent']}%."
+        )
+
+        steps.append(
+            "Calculate battery after flight: "
+            f"{state['battery_percent']}% - "
+            f"{battery_result['required_battery_percent']}% = "
+            f"{battery_result['battery_after_flight_percent']}%."
+        )
+
+        steps.append(
+            "Compare the remaining battery with the required "
+            f"{state['reserve_percent']}% reserve."
+        )
+
+        if (
+            battery_result["status"]
+            == "safe"
+        ):
+            steps.append(
+                "The remaining battery satisfies "
+                "the required reserve."
+            )
+
+        elif (
+            battery_result["status"]
+            == "unsafe"
+        ):
+            steps.append(
+                "The remaining battery does not satisfy "
+                "the required reserve."
+            )
+
+        else:
+            steps.append(
+                battery_result.get(
+                    "message",
+                    "The battery safety check returned an error.",
+                )
+            )
+
+    elif (
+        flight_result is not None
+        and flight_result.get("status")
+        != "success"
+    ):
+        steps.append(
+            "Battery analysis is not performed because the "
+            "flight dynamics do not provide a valid flight time."
+        )
+
+    else:
+        battery_data_available = all(
+            state.get(field) is not None
+            for field in BATTERY_FIELDS
+        )
+
+        if not battery_data_available:
+            steps.append(
+                "Battery safety cannot yet be fully calculated "
+                "because one or more battery parameters are missing."
+            )
+
+        else:
+            steps.append(
+                "Battery safety does not currently have "
+                "a valid result."
+            )
+
+    status = state.get(
+        "mission_status",
+        "UNDETERMINED",
+    )
+
+    if status == "FEASIBLE":
+        steps.append(
+            "Flight dynamics, wind safety and battery safety "
+            "all passed. The mission is FEASIBLE."
+        )
+
+    elif status == "NOT FEASIBLE":
+        steps.append(
+            "At least one safety condition failed, therefore "
+            "the mission is NOT FEASIBLE."
+        )
+
+    elif status == "INVALID":
+        steps.append(
+            "At least one validation check returned an error, "
+            "therefore the mission data is INVALID."
+        )
+
+    else:
+        steps.append(
+            "Mission feasibility remains UNDETERMINED because "
+            "required information or results are still missing."
+        )
+
+    return "\n".join(
+        f"{number}. {step}"
+        for number, step
+        in enumerate(
+            steps,
+            start=1,
         )
     )
 
+
+def process_input_node(
+    state: DroneMissionState,
+) -> dict:
+    print(
+        "\n[NODE] process_input"
+    )
+
+    user_input = state[
+        "user_input"
+    ]
+
+    if is_trace_request(
+        user_input
+    ):
+        return {
+            "intent": "trace",
+            "updated_fields": [],
+        }
+
+    updates = extract_updates(
+        user_input
+    )
+
+    if (
+        not updates
+        and not is_analysis_request(
+            user_input
+        )
+    ):
+        return {
+            "intent": "question",
+            "updated_fields": [],
+        }
+
+    changed_fields = (
+        get_changed_fields(
+            state,
+            updates,
+        )
+    )
+
+    changed_set = set(
+        changed_fields
+    )
+
+    force_recalculation = (
+        is_recalculation_request(
+            user_input
+        )
+    )
+
+    flight_changed = bool(
+        changed_set
+        & FLIGHT_FIELDS
+    )
+
+    wind_changed = bool(
+        changed_set
+        & WIND_FIELDS
+    )
+
+    battery_changed = bool(
+        changed_set
+        & BATTERY_FIELDS
+    )
+
+    flight_result = state.get(
+        "flight_result"
+    )
+
+    wind_result = state.get(
+        "wind_result"
+    )
+
+    battery_result = state.get(
+        "battery_result"
+    )
+
+    if (
+        flight_changed
+        or force_recalculation
+    ):
+        flight_result = None
+        battery_result = None
+
+    if (
+        wind_changed
+        or force_recalculation
+    ):
+        wind_result = None
+
+    if (
+        battery_changed
+        or force_recalculation
+    ):
+        battery_result = None
+
+    flight_ready = (
+        has_required_values(
+            state,
+            updates,
+            FLIGHT_FIELDS,
+        )
+    )
+
+    wind_ready = (
+        has_required_values(
+            state,
+            updates,
+            WIND_FIELDS,
+        )
+    )
+
+    battery_ready = (
+        has_required_values(
+            state,
+            updates,
+            BATTERY_FIELDS,
+        )
+    )
+
+    run_flight = (
+        flight_ready
+        and flight_result is None
+    )
+
+    run_wind = (
+        wind_ready
+        and wind_result is None
+    )
+
+    run_battery = (
+        battery_ready
+        and battery_result is None
+    )
+
+    scheduled_checks = []
+
+    if run_flight:
+        scheduled_checks.append(
+            "flight"
+        )
+
+    if run_wind:
+        scheduled_checks.append(
+            "wind"
+        )
+
+    if run_battery:
+        scheduled_checks.append(
+            "battery"
+        )
+
+    if changed_fields:
+        print(
+            "[STATE] Updated fields: "
+            + ", ".join(
+                changed_fields
+            )
+        )
+
+    else:
+        print(
+            "[STATE] No mission parameter changed."
+        )
+
+    if scheduled_checks:
+        print(
+            "[ROUTER] Scheduled checks: "
+            + " -> ".join(
+                scheduled_checks
+            )
+        )
+
+    else:
+        print(
+            "[ROUTER] Reusing cached results."
+        )
+
+    return {
+        **updates,
+        "intent":
+            "analyse",
+        "updated_fields":
+            changed_fields,
+        "flight_result":
+            flight_result,
+        "wind_result":
+            wind_result,
+        "battery_result":
+            battery_result,
+        "run_flight":
+            run_flight,
+        "run_wind":
+            run_wind,
+        "run_battery":
+            run_battery,
+        "response":
+            "",
+    }
+
+
+def route_after_input(
+    state: DroneMissionState,
+) -> Literal[
+    "flight",
+    "wind",
+    "battery",
+    "report",
+    "trace",
+    "question",
+]:
+    intent = state[
+        "intent"
+    ]
+
+    if intent == "trace":
+        return "trace"
+
+    if intent == "question":
+        return "question"
+
+    if state.get(
+        "run_flight",
+        False,
+    ):
+        return "flight"
+
+    if state.get(
+        "run_wind",
+        False,
+    ):
+        return "wind"
+
+    if (
+        state.get(
+            "run_battery",
+            False,
+        )
+        and state.get(
+            "flight_result"
+        )
+        is not None
+        and state[
+            "flight_result"
+        ].get("status")
+        == "success"
+    ):
+        return "battery"
+
+    return "report"
+
+
+def flight_check_node(
+    state: DroneMissionState,
+) -> dict:
+    print(
+        "[NODE] flight_check"
+    )
+
+    flight_result = (
+        calculate_flight_time.invoke(
+            {
+                "distance_km":
+                    state[
+                        "distance_km"
+                    ],
+                "drone_speed_kmh":
+                    state[
+                        "drone_speed_kmh"
+                    ],
+                "wind_speed_kmh":
+                    state[
+                        "wind_speed_kmh"
+                    ],
+                "flight_bearing_deg":
+                    state[
+                        "flight_bearing_deg"
+                    ],
+                "wind_direction_from_deg":
+                    state[
+                        "wind_direction_from_deg"
+                    ],
+            }
+        )
+    )
+
+    return {
+        "flight_result":
+            flight_result,
+        "run_flight":
+            False,
+        "run_battery":
+            (
+                state.get(
+                    "run_battery",
+                    False,
+                )
+                and flight_result.get(
+                    "status"
+                )
+                == "success"
+            ),
+    }
+
+
+def route_after_flight(
+    state: DroneMissionState,
+) -> Literal[
+    "wind",
+    "battery",
+    "report",
+]:
+    if state.get(
+        "run_wind",
+        False,
+    ):
+        return "wind"
+
+    if (
+        state.get(
+            "run_battery",
+            False,
+        )
+        and state.get(
+            "flight_result"
+        )
+        is not None
+        and state[
+            "flight_result"
+        ].get("status")
+        == "success"
+    ):
+        return "battery"
+
+    return "report"
+
+
+def wind_check_node(
+    state: DroneMissionState,
+) -> dict:
+    print(
+        "[NODE] wind_check"
+    )
+
+    wind_result = (
+        check_wind_safety.invoke(
+            {
+                "wind_speed_kmh":
+                    state[
+                        "wind_speed_kmh"
+                    ],
+                "max_safe_wind_speed_kmh":
+                    state[
+                        "max_safe_wind_speed_kmh"
+                    ],
+            }
+        )
+    )
+
+    return {
+        "wind_result":
+            wind_result,
+        "run_wind":
+            False,
+    }
+
+
+def route_after_wind(
+    state: DroneMissionState,
+) -> Literal[
+    "battery",
+    "report",
+]:
+    if (
+        state.get(
+            "run_battery",
+            False,
+        )
+        and state.get(
+            "flight_result"
+        )
+        is not None
+        and state[
+            "flight_result"
+        ].get("status")
+        == "success"
+    ):
+        return "battery"
+
+    return "report"
+
+
+def battery_check_node(
+    state: DroneMissionState,
+) -> dict:
+    print(
+        "[NODE] battery_check"
+    )
+
+    flight_result = state[
+        "flight_result"
+    ]
+
+    battery_result = (
+        check_battery.invoke(
+            {
+                "flight_time_minutes":
+                    flight_result[
+                        "flight_time_minutes"
+                    ],
+                "battery_percent":
+                    state[
+                        "battery_percent"
+                    ],
+                "consumption_percent_per_minute":
+                    state[
+                        "consumption_percent_per_minute"
+                    ],
+                "reserve_percent":
+                    state[
+                        "reserve_percent"
+                    ],
+            }
+        )
+    )
+
+    return {
+        "battery_result":
+            battery_result,
+        "run_battery":
+            False,
+    }
+
+
+def final_report_node(
+    state: DroneMissionState,
+) -> dict:
+    print(
+        "[NODE] final_report"
+    )
+
+    flight_result = state.get(
+        "flight_result"
+    )
+
+    wind_result = state.get(
+        "wind_result"
+    )
+
+    battery_result = state.get(
+        "battery_result"
+    )
+
     output = []
+
     unsafe = False
+    invalid = False
 
     if flight_result is None:
         output.append(
             "Flight calculation: UNDETERMINED"
         )
 
-    elif flight_result["status"] == "success":
+    elif (
+        flight_result["status"]
+        == "success"
+    ):
         output.append(
             "Estimated flight time: "
             f"{flight_result['flight_time_minutes']} minutes"
@@ -1049,7 +1607,10 @@ def final_report_node(
             f"{flight_result['crosswind_component_kmh']} km/h"
         )
 
-    else:
+    elif (
+        flight_result["status"]
+        == "unsafe"
+    ):
         unsafe = True
 
         output.append(
@@ -1057,7 +1618,26 @@ def final_report_node(
         )
 
         output.append(
-            flight_result["message"]
+            flight_result[
+                "message"
+            ]
+        )
+
+    else:
+        invalid = True
+
+        output.append(
+            "Flight calculation: ERROR"
+        )
+
+        output.append(
+            flight_result.get(
+                "message",
+                (
+                    "Unknown flight "
+                    "calculation error."
+                ),
+            )
         )
 
     if wind_result is None:
@@ -1065,14 +1645,20 @@ def final_report_node(
             "Wind safety: UNDETERMINED"
         )
 
-    elif wind_result["status"] == "safe":
+    elif (
+        wind_result["status"]
+        == "safe"
+    ):
         output.append(
             "Wind safety: SAFE "
             f"({wind_result['wind_speed_kmh']} km/h <= "
             f"{wind_result['max_safe_wind_speed_kmh']} km/h)"
         )
 
-    else:
+    elif (
+        wind_result["status"]
+        == "unsafe"
+    ):
         unsafe = True
 
         output.append(
@@ -1081,49 +1667,35 @@ def final_report_node(
             f"{wind_result['max_safe_wind_speed_kmh']} km/h)"
         )
 
+    else:
+        invalid = True
+
+        output.append(
+            "Wind safety: ERROR"
+        )
+
+        output.append(
+            wind_result.get(
+                "message",
+                (
+                    "Unknown wind "
+                    "safety error."
+                ),
+            )
+        )
+
     if battery_result is None:
         output.append(
             "Battery safety: UNDETERMINED"
         )
 
-        battery_parameters_available = all(
-            state.get(key) is not None
-            for key in [
-                "battery_percent",
-                "consumption_percent_per_minute",
-                "reserve_percent",
-            ]
+    elif (
+        battery_result["status"]
+        == "safe"
+    ):
+        output.append(
+            "Battery safety: SAFE"
         )
-
-        if (
-            flight_result is not None
-            and flight_result.get("status")
-            != "success"
-        ):
-            trace.append(
-                "Battery analysis is not performed because the "
-                "flight dynamics are already unsafe and no valid "
-                "flight time is available."
-            )
-
-        elif not battery_parameters_available:
-            trace.append(
-                "Battery safety cannot yet be fully calculated "
-                "because one or more battery parameters are missing."
-            )
-
-    else:
-        if battery_result["status"] == "safe":
-            output.append(
-                "Battery safety: SAFE"
-            )
-
-        else:
-            unsafe = True
-
-            output.append(
-                "Battery safety: UNSAFE"
-            )
 
         output.append(
             "Estimated battery consumption: "
@@ -1140,123 +1712,155 @@ def final_report_node(
             f"{battery_result['required_reserve_percent']}%"
         )
 
-    if unsafe:
+    elif (
+        battery_result["status"]
+        == "unsafe"
+    ):
+        unsafe = True
+
+        output.append(
+            "Battery safety: UNSAFE"
+        )
+
+        output.append(
+            "Estimated battery consumption: "
+            f"{battery_result['required_battery_percent']}%"
+        )
+
+        output.append(
+            "Estimated battery after flight: "
+            f"{battery_result['battery_after_flight_percent']}%"
+        )
+
+        output.append(
+            "Required battery reserve: "
+            f"{battery_result['required_reserve_percent']}%"
+        )
+
+    else:
+        invalid = True
+
+        output.append(
+            "Battery safety: ERROR"
+        )
+
+        output.append(
+            battery_result.get(
+                "message",
+                (
+                    "Unknown battery "
+                    "safety error."
+                ),
+            )
+        )
+
+    missing_fields = (
+        get_missing_fields(
+            state
+        )
+    )
+
+    if invalid:
+        mission_status = (
+            "INVALID"
+        )
+
+        output.append(
+            "\nFinal mission feasibility: INVALID DATA"
+        )
+
+    elif unsafe:
+        mission_status = (
+            "NOT FEASIBLE"
+        )
+
         output.append(
             "\nFinal mission feasibility: NOT FEASIBLE"
         )
 
-        trace.append(
-            "At least one safety condition failed, therefore the "
-            "mission is NOT FEASIBLE."
+    elif missing_fields:
+        mission_status = (
+            "UNDETERMINED"
+        )
+
+        output.append(
+            "\nMissing information:"
+        )
+
+        for item in missing_fields:
+            output.append(
+                f"- {item}"
+            )
+
+        output.append(
+            "\nFinal mission feasibility: UNDETERMINED"
+        )
+
+    elif (
+        flight_result is None
+        or wind_result is None
+        or battery_result is None
+    ):
+        mission_status = (
+            "UNDETERMINED"
+        )
+
+        output.append(
+            "\nFinal mission feasibility: UNDETERMINED"
         )
 
     else:
-        missing = []
+        mission_status = (
+            "FEASIBLE"
+        )
 
-        if state.get("distance_km") is None:
-            missing.append(
-                "flight distance"
-            )
-
-        if state.get("drone_speed_kmh") is None:
-            missing.append(
-                "drone speed"
-            )
-
-        if state.get("wind_speed_kmh") is None:
-            missing.append(
-                "wind speed"
-            )
-
-        if state.get("flight_bearing_deg") is None:
-            missing.append(
-                "flight direction or bearing"
-            )
-
-        if state.get(
-            "wind_direction_from_deg"
-        ) is None:
-            missing.append(
-                "wind direction"
-            )
-
-        if state.get(
-            "max_safe_wind_speed_kmh"
-        ) is None:
-            missing.append(
-                "maximum safe wind speed"
-            )
-
-        if state.get("battery_percent") is None:
-            missing.append(
-                "current battery percentage"
-            )
-
-        if state.get(
-            "consumption_percent_per_minute"
-        ) is None:
-            missing.append(
-                "battery consumption percentage per minute"
-            )
-
-        if state.get("reserve_percent") is None:
-            missing.append(
-                "required battery reserve"
-            )
-
-        if missing:
-            output.append(
-                "\nMissing information:"
-            )
-
-            for item in missing:
-                output.append(
-                    f"- {item}"
-                )
-
-            output.append(
-                "\nFinal mission feasibility: UNDETERMINED"
-            )
-
-            trace.append(
-                "Mission feasibility remains UNDETERMINED because "
-                "required information is still missing."
-            )
-
-        else:
-            output.append(
-                "\nFinal mission feasibility: FEASIBLE"
-            )
-
-            trace.append(
-                "Flight dynamics, wind safety and battery safety "
-                "all passed. The mission is FEASIBLE."
-            )
+        output.append(
+            "\nFinal mission feasibility: FEASIBLE"
+        )
 
     report = "\n".join(
         output
     )
 
-    calculation_trace = format_trace(
-        trace
+    temporary_state = {
+        **state,
+        "mission_status":
+            mission_status,
+        "missing_fields":
+            missing_fields,
+    }
+
+    calculation_trace = (
+        build_calculation_trace(
+            temporary_state
+        )
     )
 
     return {
-        "final_report": report,
+        "mission_status":
+            mission_status,
+        "missing_fields":
+            missing_fields,
+        "final_report":
+            report,
         "calculation_trace":
             calculation_trace,
-        "trace_steps": trace,
-        "response": report,
+        "response":
+            report,
     }
 
 
 def show_trace_node(
     state: DroneMissionState,
 ) -> dict:
-    print("[NODE] show_trace")
+    print(
+        "[NODE] show_trace"
+    )
 
-    calculation_trace = state.get(
-        "calculation_trace"
+    calculation_trace = (
+        state.get(
+            "calculation_trace"
+        )
     )
 
     if not calculation_trace:
@@ -1271,24 +1875,36 @@ def show_trace_node(
         )
 
     return {
-        "response": response,
+        "response":
+            response,
     }
 
 
 def answer_question_node(
     state: DroneMissionState,
 ) -> dict:
-    print("[NODE] answer_question")
-    print("[AGENT] Thinking...")
+    print(
+        "[NODE] answer_question"
+    )
+
+    print(
+        "[AGENT] Thinking..."
+    )
 
     report = state.get(
         "final_report",
-        "No mission has been analysed yet.",
+        (
+            "No mission has "
+            "been analysed yet."
+        ),
     )
 
     trace = state.get(
         "calculation_trace",
-        "No calculation steps are available yet.",
+        (
+            "No calculation steps "
+            "are available yet."
+        ),
     )
 
     system_prompt = f"""
@@ -1312,6 +1928,9 @@ relative_angle = wind_direction_from_deg - flight_bearing_deg
 crosswind_component =
 wind_speed * sin(relative_angle)
 
+The magnitude represents crosswind strength.
+The sign represents direction according to this mathematical convention.
+
 CURRENT MISSION STATE:
 {state_to_text(state)}
 
@@ -1332,7 +1951,9 @@ Respond in English.
             ),
             (
                 "human",
-                state["user_input"],
+                state[
+                    "user_input"
+                ],
             ),
         ],
         reasoning=False,
@@ -1349,6 +1970,7 @@ Respond in English.
 builder = StateGraph(
     DroneMissionState
 )
+
 
 builder.add_node(
     "process_input",
@@ -1396,16 +2018,33 @@ builder.add_conditional_edges(
     "process_input",
     route_after_input,
     {
-        "analyse": "flight_check",
-        "trace": "show_trace",
-        "question": "answer_question",
+        "flight":
+            "flight_check",
+        "wind":
+            "wind_check",
+        "battery":
+            "battery_check",
+        "report":
+            "final_report",
+        "trace":
+            "show_trace",
+        "question":
+            "answer_question",
     },
 )
 
 
-builder.add_edge(
+builder.add_conditional_edges(
     "flight_check",
-    "wind_check",
+    route_after_flight,
+    {
+        "wind":
+            "wind_check",
+        "battery":
+            "battery_check",
+        "report":
+            "final_report",
+    },
 )
 
 
@@ -1413,8 +2052,10 @@ builder.add_conditional_edges(
     "wind_check",
     route_after_wind,
     {
-        "battery": "battery_check",
-        "report": "final_report",
+        "battery":
+            "battery_check",
+        "report":
+            "final_report",
     },
 )
 
@@ -1423,7 +2064,6 @@ builder.add_edge(
     "battery_check",
     "final_report",
 )
-
 
 builder.add_edge(
     "final_report",
@@ -1443,22 +2083,31 @@ builder.add_edge(
 
 memory = InMemorySaver()
 
-drone_mission_graph = builder.compile(
-    checkpointer=memory
+
+drone_mission_graph = (
+    builder.compile(
+        checkpointer=memory
+    )
 )
 
 
-THREAD_ID = "drone-mission-session"
+THREAD_ID = (
+    "drone-mission-session"
+)
+
 
 config = {
     "configurable": {
-        "thread_id": THREAD_ID
+        "thread_id":
+            THREAD_ID
     }
 }
 
 
 def main() -> None:
-    print("LangGraph Drone Mission Agent")
+    print(
+        "LangGraph Drone Mission Agent"
+    )
 
     print(
         "\nDescribe the drone mission."
@@ -1481,6 +2130,7 @@ def main() -> None:
             print(
                 "\n\nClosing LangGraph Drone Mission Agent..."
             )
+
             break
 
         if not user_input:
@@ -1494,9 +2144,13 @@ def main() -> None:
             print(
                 "\nClosing LangGraph Drone Mission Agent..."
             )
+
             break
 
-        if user_input.lower() == "reset":
+        if (
+            user_input.lower()
+            == "reset"
+        ):
             memory.delete_thread(
                 THREAD_ID
             )
@@ -1512,15 +2166,17 @@ def main() -> None:
         )
 
         try:
-            result = drone_mission_graph.invoke(
-                {
-                    "user_input":
-                        user_input
-                },
-                config=config,
+            result = (
+                drone_mission_graph.invoke(
+                    {
+                        "user_input":
+                            user_input
+                    },
+                    config=config,
+                )
             )
 
-        except Exception as error:  # noqa: BLE001 Disbale exception Ruff
+        except Exception as error:  # noqa: BLE001 - Disable Ruff
             print(
                 "\n[ERROR]"
             )
@@ -1536,7 +2192,9 @@ def main() -> None:
         )
 
         print(
-            result["response"]
+            result[
+                "response"
+            ]
         )
 
 
